@@ -1,120 +1,139 @@
 <?php
+
 namespace zongphp\middleware\build;
 
+use zongphp\arr\Arr;
 use zongphp\config\Config;
-use zongphp\container\Container;
+use zongphp\route\Route;
 
-class Base {
-	protected $run = [ ];
+class Base
+{
+    protected $params;
 
-	/**
-	 * 添加控制器执行的中间件
-	 *
-	 * @param string $name 中间件名称
-	 * @param array $mod 类型
-	 *  ['only'=>array('a','b')] 仅执行a,b控制器动作
-	 *  ['except']=>array('a','b')], 除了a,b控制器动作
-	 */
-	public function set( $name, $mod = [ ] ) {
-		if ( $mod ) {
-			foreach ( $mod as $type => $data ) {
-				switch ( $type ) {
-					case 'only':
-						if ( in_array( ACTION, $data ) ) {
-							$this->run[] = Config::get( 'middleware.controller.' . $name );
-						}
-						break;
-					case 'except':
-						if ( ! in_array( ACTION, $data ) ) {
-							$this->run[] = Config::get( 'middleware.controller.' . $name );
-						}
-						break;
-				}
-			}
-		} else {
-			$this->run[] = Config::get( 'middleware.controller.' . $name );
-		}
-	}
+    /**
+     * 执行中间件
+     *
+     * @param $middleware
+     *
+     * @return bool
+     */
+    protected function exe($middleware)
+    {
+        $middleware = array_unique($middleware);
+        $dispatcher = array_reduce(array_reverse($middleware), $this->callback(), function () {
+        });
+        $dispatcher();
 
-	//执行控制器中间件
-	public function controller() {
-		foreach ( $this->run as $class ) {
-			if ( class_exists( $class ) ) {
-				Container::callMethod( $class, 'run' );
-			}
-		}
-	}
+        return true;
+    }
 
-	//执行全局中间件
-	public function globals() {
-		$middleware = array_unique( Config::get( 'middleware.global' ) );
-		foreach ( $middleware as $class ) {
-			if ( class_exists( $class ) ) {
-				Container::callMethod( $class, 'run' );
-			}
-		}
-	}
+    /**
+     * 装饰者闭包
+     *
+     * @return \Closure
+     */
+    protected function callback()
+    {
+        return function ($callback, $class) {
+            return function () use ($callback, $class) {
+                $content = call_user_func_array([new $class, 'run'], [$callback,$this->params]);
+                if ($content) {
+                    echo is_object($content) ? $content : Response::make($content);
+                    die;
+                }
+            };
+        };
+    }
 
-	/**
-	 * 执行系统中间件
-	 *
-	 * @param $name
-	 *
-	 * @return mixed
-	 */
-	public function system( $name ) {
-		$class = Config::get( 'middleware.system.' . $name );
-		if ( is_array( $class ) ) {
-			//数组配置时
-			foreach ( $class as $c ) {
-				if ( class_exists( $c ) && method_exists( $c, 'run' ) ) {
-					return Container::callMethod( $c, 'run' );
-				}
-			}
-		} else {
-			if ( class_exists( $class ) && method_exists( $class, 'run' ) ) {
-				return Container::callMethod( $class, 'run' );
-			}
-		}
-	}
+    /**
+     * 执行控制器中间件
+     *
+     * @param       $name  中间件名称
+     * @param array $mod   类型
+     *                     ['only'=>array('a','b')] 仅执行a,b控制器动作
+     *                     ['except']=>array('a','b')], 除了a,b控制器动作
+     *
+     * @return bool
+     */
+    public function set($name, $mod = [])
+    {
+        $middleware = [];
+        if ($mod) {
+            $action = strtolower(Route::getAction());
+            foreach ($mod as $type => $data) {
+                $data = Arr::valueCase($data, 0);
+                switch ($type) {
+                    case 'only':
+                        if (in_array($action, $data)) {
+                            $middleware = array_merge(
+                                $middleware,
+                                Config::get('middleware.controller.'.$name)
+                            );
+                        }
+                        break;
+                    case 'except':
+                        if ( ! in_array($action, $data)) {
+                            $middleware = array_merge(
+                                $middleware,
+                                Config::get('middleware.controller.'.$name)
+                            );
+                        }
+                        break;
+                }
+            }
+        } else {
+            $middleware = Config::get('middleware.controller.'.$name);
+        }
 
-	/**
-	 * 添加中间件
-	 *
-	 * @param $name 中间件
-	 * @param $class 处理类
-	 *
-	 * @return Base
-	 */
-	public function add( $name, $class ) {
-		$class      = is_array( $class ) ? $class : [ $class ];
-		$middleware = Config::get( 'middleware.web.' . $name ) ?: [ ];
-		foreach ( $class as $c ) {
-			array_push( $middleware, $c );
-		}
-		Config::set( 'middleware.web.' . $name, array_unique( $middleware ) );
-	}
+        return $this->exe(array_unique($middleware));
+    }
 
-	/**
-	 * 执行应用中间件
-	 *
-	 * @param $name
-	 *
-	 * @return mixed
-	 */
-	public function exe( $name ) {
-		$class = Config::get( 'middleware.web.' . $name );
-		if ( is_array( $class ) ) {
-			//数组配置时
-			foreach ( $class as $c ) {
-				if ( class_exists( $c ) && method_exists( $c, 'run' ) ) {
-					return Container::callMethod( $c, 'run' );
-				}
-			}
-		} else {
-			if ( class_exists( $class ) && method_exists( $class, 'run' ) ) {
-				return Container::callMethod( $class, 'run' );
-			}
-		}
-	}
+    /**
+     * 执行全局中间件
+     *
+     * @return bool
+     */
+    public function globals()
+    {
+        $middleware = array_unique(Config::get('middleware.global'));
+
+        return $this->exe($middleware);
+    }
+
+
+    /**
+     * 添加应用中间件
+     *
+     * @param $name  中间件
+     * @param $class 处理类
+     *
+     * @return bool
+     */
+    public function add($name, $class)
+    {
+        $middleware = Config::get('middleware.web.'.$name) ?: [];
+        foreach ($class as $c) {
+            array_push($middleware, $c);
+        }
+
+        return Config::set('middleware.web.'.$name, array_unique($middleware));
+    }
+
+    /**
+     * 执行应用中间件
+     *
+     * @param string $name   中间件
+     * @param mixed  $params 参数
+     *
+     * @return bool
+     */
+    public function web($name, $params = [])
+    {
+        $middleware = Config::get('middleware.web.'.$name) ?: [];
+        if ( ! empty($middleware)) {
+            $this->params = $params;
+
+            return $this->exe($middleware);
+        }
+    }
 }

@@ -1,16 +1,18 @@
 {
   "name": "zongphp/middleware",
   "description": "中间件组件",
-  "type": "project",
   "keywords": [
-    "数据库管理"
+    "zongphp",
+    "中间件组件"
   ],
   "license": "MIT",
   "minimum-stability": "stable",
   "require": {
     "php": ">=5.4.0",
-    "zongphp/config": "~1.0",
-    "zongphp/container": "~1.0"
+    "zongphp/config": "~2.0",
+    "zongphp/arr": "~2.0",
+    "zongphp/container": "~2.0",
+    "zongphp/route": "~2.0"
   },
   "autoload": {
     "files": [],
